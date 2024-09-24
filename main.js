@@ -1,101 +1,67 @@
-let peerConnection = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] // STUN server
-});
+let peerConnection = new RTCPeerConnection()
 let localStream;
 let remoteStream;
 
-// Function to get the video stream from a specific device
-const getMediaStream = async (deviceId) => {
-    return await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: deviceId ? { exact: deviceId } : undefined },
-        audio: false
+let init = async () => {
+    localStream = await navigator.mediaDevices.getUserMedia({video:true, audio:false})
+    remoteStream = new MediaStream()
+    document.getElementById('user-1').srcObject = localStream
+    document.getElementById('user-2').srcObject = remoteStream
+
+    localStream.getTracks().forEach((track) => {
+        peerConnection.addTrack(track, localStream);
     });
-};
 
-// Function to initialize the peer connection
-const init = async () => {
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-        // Try to get the media stream from the available video devices
-        for (const videoDevice of videoDevices) {
-            try {
-                localStream = await getMediaStream(videoDevice.deviceId);
-                break; // Break if successful
-            } catch (error) {
-                console.warn(`Failed to access camera: ${videoDevice.label}`, error);
-            }
-        }
-
-        if (!localStream) {
-            alert('No available camera found. Please check your devices.');
-            return;
-        }
-
-        remoteStream = new MediaStream();
-        document.getElementById('user-1').srcObject = localStream;
-        document.getElementById('user-2').srcObject = remoteStream;
-
-        localStream.getTracks().forEach(track => {
-            peerConnection.addTrack(track, localStream);
+    peerConnection.ontrack = (event) => {
+        event.streams[0].getTracks().forEach((track) => {
+        remoteStream.addTrack(track);
         });
+    };
+}
 
-        peerConnection.ontrack = event => {
-            event.streams[0].getTracks().forEach(track => {
-                remoteStream.addTrack(track);
-            });
-        };
+let createOffer = async () => {
 
-        peerConnection.onicecandidate = event => {
-            if (event.candidate) {
-                const candidatesTextarea = document.getElementById('ice-candidates');
-                candidatesTextarea.value += JSON.stringify(event.candidate) + '\n';
-            }
-        };
-    } catch (error) {
-        console.error('Error initializing media devices.', error);
-        alert('Could not initialize media devices: ' + error.message);
-    }
-};
 
-// Function to create an offer
-const createOffer = async () => {
+    peerConnection.onicecandidate = async (event) => {
+        //Event that fires off when a new offer ICE candidate is created
+        if(event.candidate){
+            document.getElementById('offer-sdp').value = JSON.stringify(peerConnection.localDescription)
+        }
+    };
+
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
-    document.getElementById('offer-sdp').value = JSON.stringify(offer);
-};
+}
 
-// Function to create an answer
-const createAnswer = async () => {
-    const offer = JSON.parse(document.getElementById('offer-sdp').value);
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    document.getElementById('answer-sdp').value = JSON.stringify(answer);
-};
+let createAnswer = async () => {
 
-// Function to add the answer from the other peer
-const addAnswer = async () => {
-    const answer = JSON.parse(document.getElementById('answer-sdp').value);
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-};
+    let offer = JSON.parse(document.getElementById('offer-sdp').value)
 
-// Function to add ICE candidates
-const addIceCandidate = async () => {
-    const candidatesTextarea = document.getElementById('ice-candidates').value.trim().split('\n');
-    for (const candidateStr of candidatesTextarea) {
-        if (candidateStr) {
-            const candidate = JSON.parse(candidateStr);
-            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    peerConnection.onicecandidate = async (event) => {
+        //Event that fires off when a new answer ICE candidate is created
+        if(event.candidate){
+            console.log('Adding answer candidate...:', event.candidate)
+            document.getElementById('answer-sdp').value = JSON.stringify(peerConnection.localDescription)
         }
+    };
+
+    await peerConnection.setRemoteDescription(offer);
+
+    let answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer); 
+}
+
+let addAnswer = async () => {
+    console.log('Add answer triggerd')
+    let answer = JSON.parse(document.getElementById('answer-sdp').value)
+    console.log('answer:', answer)
+    if (!peerConnection.currentRemoteDescription){
+        peerConnection.setRemoteDescription(answer);
     }
-};
+}
 
-// Initialize the connection and UI
-init();
+init()
 
-document.getElementById('create-offer').addEventListener('click', createOffer);
-document.getElementById('create-answer').addEventListener('click', createAnswer);
-document.getElementById('add-answer').addEventListener('click', addAnswer);
-document.getElementById('add-ice-candidate').addEventListener('click', addIceCandidate);
+document.getElementById('create-offer').addEventListener('click', createOffer)
+document.getElementById('create-answer').addEventListener('click', createAnswer)
+document.getElementById('add-answer').addEventListener('click', addAnswer)
